@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hybrid RAG — Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">&#9670;</span>
+    <div class="brand-text">
+      <span class="brand-name">Hybrid RAG</span>
+      <span class="brand-sub">grounded QA console</span>
+    </div>
+  </div>
+
+  <nav class="tabs" aria-label="Sections">
+    <button class="tab-btn is-active" data-tab="chat" id="tab-chat" type="button" aria-selected="true">Chat</button>
+    <button class="tab-btn" data-tab="ingest" id="tab-ingest" type="button" aria-selected="false">Ingest</button>
+    <button class="tab-btn" data-tab="documents" id="tab-documents" type="button" aria-selected="false">Documents</button>
+    <button class="tab-btn" data-tab="eval" id="tab-eval" type="button" aria-selected="false">Eval</button>
+    <button class="tab-btn" data-tab="observability" id="tab-observability" type="button" aria-selected="false">Observability</button>
+  </nav>
+
+  <div class="health-indicator" role="status" aria-live="polite">
+    <span class="health-dot" id="health-dot"></span>
+    <span id="health-text">checking&hellip;</span>
+  </div>
+</header>
+
+<main>
+
+  <section id="panel-chat" class="panel is-active" aria-labelledby="tab-chat">
+    <div class="chat-layout">
+      <form id="ask-form" class="ask-form">
+        <label for="question-input" class="field-label">Ask a question about the ingested corpus</label>
+        <div class="ask-row">
+          <input type="text" id="question-input" name="question" placeholder="e.g. What is deep learning?" autocomplete="off" required>
+          <button type="submit" id="ask-button" class="primary-button">Ask</button>
+        </div>
+      </form>
+      <div id="chat-empty" class="empty-state">No questions asked yet in this session.</div>
+      <div id="chat-log" class="chat-log" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <section id="panel-ingest" class="panel" aria-labelledby="tab-ingest" hidden>
+    <div class="panel-header">
+      <h1>Ingestion</h1>
+      <p class="panel-desc">Loads, chunks, embeds, and indexes everything under the corpus directory. Safe to re-run — already-indexed chunks are skipped, not re-embedded, and near-duplicates are filtered at insert time.</p>
+    </div>
+    <button id="ingest-button" type="button" class="primary-button">Run Ingestion</button>
+    <div id="ingest-result" class="result-block" aria-live="polite"></div>
+  </section>
+
+  <section id="panel-documents" class="panel" aria-labelledby="tab-documents" hidden>
+    <div class="panel-header">
+      <h1>Indexed Documents</h1>
+      <p class="panel-desc">Live snapshot of what's currently in the vector store.</p>
+    </div>
+    <button id="documents-refresh" type="button" class="secondary-button">Refresh</button>
+    <div id="documents-result" class="result-block" aria-live="polite"></div>
+  </section>
+
+  <section id="panel-eval" class="panel" aria-labelledby="tab-eval" hidden>
+    <div class="panel-header">
+      <h1>Golden Eval Suite</h1>
+      <p class="panel-desc">Runs every approved question in the golden Q&amp;A set through the full retrieve&#8594;rerank&#8594;generate&#8594;verify&#8594;score pipeline. Each question costs several real model calls — expect this to take a few minutes on a full set.</p>
+    </div>
+    <button id="eval-button" type="button" class="primary-button">Run Eval Suite</button>
+    <div id="eval-result" class="result-block" aria-live="polite"></div>
+  </section>
+
+  <section id="panel-observability" class="panel" aria-labelledby="tab-observability" hidden>
+    <div class="panel-header">
+      <h1>Observability</h1>
+      <p class="panel-desc">Live traffic, not a fixed test set — latency and grounding quality (retrieval confidence, citation coverage, composite confidence) for every real request this server has handled since it started.</p>
+    </div>
+    <button id="observability-refresh" type="button" class="secondary-button">Refresh</button>
+    <div id="observability-result" class="result-block" aria-live="polite"></div>
+  </section>
+
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>

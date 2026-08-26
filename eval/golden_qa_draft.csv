@@ -1,0 +1,38 @@
+﻿id,category,question,expected_behavior,source_hint,your_correction,approved
+q001,direct_lookup,What is TF-IDF?,answerable,NLP.pdf -- TF-IDF definition section,,yes
+q002,direct_lookup,What is deep learning?,answerable,DeepLearning.pdf -- opening definition,,yes
+q003,direct_lookup,What are the core components of a CNN architecture?,answerable,DeepLearning.pdf -- CNN Architecture Overview,,yes
+q004,direct_lookup,What is the LeNet-5 architecture and who developed it?,answerable,DeepLearning.pdf -- LeNet-5 section,,yes
+q005,direct_lookup,What is Mixed Precision Training in PyTorch?,answerable,PyTorch Complete Course.pdf -- torch.cuda.amp section,,yes
+q006,direct_lookup,What does the pin_memory parameter do in a PyTorch DataLoader?,answerable,PyTorch Complete Course.pdf -- DataLoader section,,yes
+q007,direct_lookup,What is a Computed Field in Pydantic and how does it differ from a Regular Field?,answerable,FastAPI_Complete_Course_OCR.pdf -- Field comparison table,,yes
+q008,direct_lookup,What is the purpose of the timeout mechanism in MCP?,answerable,MCP Complete Course.pdf -- Timeout section,,yes
+q009,direct_lookup,What are LangGraph checkpointers and name two examples.,answerable,Langgraph Complete.pdf -- Checkpointers section (MemorySaver SqliteSaver),,yes
+q010,direct_lookup,What is the Runnable interface in LangChain?,answerable,LangChain_Complete_Course_OCR.pdf -- Runnable section,,yes
+q011,direct_lookup,What does the Field function in Pydantic allow you to do?,answerable,LangChain_Complete_Course_OCR.pdf -- validation constraints section,,yes
+q012,direct_lookup,What is Faithfulness as a RAG evaluation metric?,answerable,LangChain_Complete_Course_OCR.pdf -- eval metrics table,,yes
+q013,direct_lookup,What do the beta parameters control in the Adam optimizer?,answerable,PyTorch Complete Course.pdf -- optim.Adam section,,yes
+q014,direct_lookup,What is a bag-of-words representation and what is one disadvantage of it?,answerable,NLP.pdf -- bag-of-words advantages/disadvantages,,yes
+q015,direct_lookup,What does the thread_id config do in LangGraph?,answerable,Langgraph Complete.pdf -- internal threading section,,yes
+q016,multi_hop,"""How does deep learning relate to machine learning and artificial intelligence -- what's the hierarchy between the three?""",answerable,Synthesize DeepLearning.pdf's multiple DL-vs-ML-vs-AI definitions,,yes
+q017,multi_hop,"When would you choose traditional ML over deep learning, and vice versa?",answerable,DeepLearning.pdf -- 'When to Use Each Approach' section,,yes
+q018,multi_hop,How would LangGraph's checkpointer system give a chatbot memory across sessions?,answerable,Synthesize Langgraph Complete.pdf checkpointer + persistence sections,,yes
+q019,multi_hop,"How do a LangChain Chain, a Runnable, and the components they connect (prompts, models, parsers) relate to each other?",answerable,Synthesize LangChain_Complete_Course_OCR.pdf's Chain / Runnable / component sections,,yes
+q020,multi_hop,Why would you prefer FastAPI's Field-based validation over writing manual validation logic?,answerable,Connect FastAPI's manual-validation example with its Pydantic Field section,,yes
+q021,multi_hop,Walk through how an MCP client connects to a server and what happens during shutdown.,answerable,Synthesize MCP Complete Course.pdf connection + shutdown-phase sections,,yes
+q022,multi_hop,Why does feature engineering matter less in deep learning than in traditional ML?,answerable,Connect DeepLearning.pdf's feature-engineering-challenge and automatic-hierarchical-learning content,,yes
+q023,multi_hop,What's the practical difference between a LangChain Chain and a LangGraph graph -- when would you reach for one over the other?,answerable,Synthesize across LangChain_Complete_Course_OCR.pdf and Langgraph Complete.pdf,,yes
+q024,multi_hop,How does representation learning connect CNNs' convolution layers to the general idea of hierarchical feature extraction in deep learning?,answerable,Synthesize DeepLearning.pdf's representation-learning and CNN sections,,yes
+q025,unanswerable,How is India's national football team performing this season?,insufficient_context,Deliberately outside corpus (already tested live -- system correctly declines),,yes
+q026,direct_lookup,What is the capital of France?,answerable,LangChain_Complete_Course_OCR.pdf / Langgraph Complete.pdf / PyTorch Complete Course.pdf -- capital of France example,,yes
+q027,unanswerable,What are the health benefits of intermittent fasting?,insufficient_context,Outside corpus scope entirely,,no
+q028,unanswerable,How do I file taxes as a freelancer in the United States?,insufficient_context,Outside corpus scope entirely,,no
+q029,unanswerable,What is the plot of the movie Inception?,insufficient_context,Outside corpus scope entirely,,no
+q030,unanswerable,Explain the LBW (leg before wicket) dismissal rule in cricket.,insufficient_context,"Trap case: corpus USES cricket as a teaching example for semantic search, but never explains cricket rules -- tests whether the system distinguishes 'topic mentioned' from 'topic explained'",,no
+q031,unanswerable,What's the weather forecast for tomorrow?,insufficient_context,Outside corpus scope entirely,,no
+q032,ambiguous,What is Attention?,ambiguous,"Could mean the ML 'attention mechanism' concept or the plain English word -- tests whether the system correctly reads it in ML context given the corpus, or flags the ambiguity",,yes
+q033,ambiguous,What is a Chain?,ambiguous,"""LangChain-specific technical term vs generic English word -- same ambiguity test as q032""",,yes
+q034,ambiguous,Explain Components.,ambiguous,"""Deliberately under-specified -- components of what system? Tests whether the system asks for scope or reasonably narrows on its own rather than guessing broadly""",,no
+q035,ambiguous,What is the best deep learning framework?,ambiguous,"Corpus has a PyTorch vs TensorFlow vs Keras vs MXNet comparison table, but 'best' is inherently criteria-dependent -- tests whether the system presents the comparison neutrally instead of asserting a single winner",,no
+q036,ambiguous,How much does this cost to run?,ambiguous,"""Corpus has LLM/LangSmith cost figures ($0.50-$2.00 per report mentioned) but the question itself doesn't specify which system -- tests whether it correctly narrows to what the corpus actually discusses""",,yes
+q037,ambiguous,What's the difference between a Chain and a Graph?,ambiguous,Legitimate LangChain-vs-LangGraph comparison but phrased broadly enough to also invite an off-topic (e.g. data-structure) reading,,no

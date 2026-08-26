@@ -1,0 +1,13 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./eval:/app/eval
+      - hf_cache:/home/app/.cache/huggingface
+volumes:
+  hf_cache:

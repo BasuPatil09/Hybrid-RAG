@@ -1,0 +1,15 @@
+fastapi>=0.141
+slowapi>=0.1.10,<1.0
+uvicorn[standard]>=0.32
+pydantic>=2.13
+pydantic-settings>=2.14
+chromadb>=1.5.9,<2.0
+rank-bm25>=0.2.2
+langchain-text-splitters>=1.1.2,<2.0
+beautifulsoup4>=4.14
+lxml>=6.0
+pypdf>=5.9
+groq>=1.6,<2.0
+httpx>=0.28
+numpy>=1.26
+sentence-transformers>=5.6,<6.0
