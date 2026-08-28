@@ -21,6 +21,7 @@ Most RAG demos stop at "retrieve some chunks, paste them into a prompt." This on
 - [Configuration](#configuration)
 - [API Reference](#api-reference)
 - [Web Console](#web-console)
+- [Screenshots](#screenshots)
 - [Evaluation Results](#evaluation-results)
 - [Testing](#testing)
 - [Security](#security)
@@ -307,6 +308,17 @@ A vanilla HTML/CSS/JS console, served as static files with no build step or fron
 - **Observability** — live traffic table (type, latency, composite confidence, detail) plus aggregate summary cards
 
 API-key prompting is reactive: requests try without prompting first, and only a `401` triggers a browser prompt with a single retry, with the entered key cached in `sessionStorage` for that tab. It does not prompt on the public `/health` check.
+
+## Screenshots
+
+**Chat** — grounded answers with per-claim citation verification and a live confidence breakdown (retrieval, citation coverage, completeness, composite)
+![Chat console with a cited answer and confidence breakdown](docs/screenshots/chat-tab.png)
+
+**Documents** — live snapshot of every source currently in the vector store, with per-source chunk counts
+![Documents console showing indexed sources and chunk counts](docs/screenshots/documents-tab.png)
+
+**Observability** — latency and grounding-quality signals for real traffic, not a fixed test set
+![Observability console showing recent requests, latency, and composite confidence](docs/screenshots/observability-tab.png)
 
 ## Evaluation Results
 
