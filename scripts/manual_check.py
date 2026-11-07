@@ -1,20 +1,22 @@
 """
-    python scripts/manual_check.py ingest
-    python scripts/manual_check.py query "your question here"
-    python scripts/manual_check.py ask "your question here"
-    python scripts/manual_check.py eval 
+python scripts/manual_check.py ingest
+python scripts/manual_check.py query "your question here"
+python scripts/manual_check.py ask "your question here"
+python scripts/manual_check.py eval
 """
 
 from __future__ import annotations
+
 import sys
 from pathlib import Path
+
 import chromadb
+
 from rag.config import get_settings
 from rag.eval.golden_qa import load_golden_questions
 from rag.eval.runner import run_eval_suite, summarize
-from rag.generation.confidence import get_completeness_judge
 from rag.generation.generator import get_generator
-from rag.generation.verification import get_citation_verifier
+from rag.generation.judges import build_judges, missing_credentials_message
 from rag.indexing.embeddings import get_embedder
 from rag.indexing.sparse_index import SparseIndex
 from rag.indexing.vector_store import ChromaVectorStore
@@ -26,6 +28,7 @@ from rag.retrieval.reranker import CrossEncoderReranker, load_cross_encoder
 _GOLDEN_QA_PATH = (
     Path(__file__).resolve().parent.parent / "eval" / "golden_qa_draft.csv"
 )
+
 
 def _build_embedder_and_store():
     settings = get_settings()
@@ -43,10 +46,12 @@ def _build_embedder_and_store():
     )
     return settings, embedder, vector_store
 
+
 def _sparse_index_from_store(vector_store: ChromaVectorStore) -> SparseIndex:
     sparse_index = SparseIndex()
     sparse_index.rebuild(vector_store.get_all_chunks())
     return sparse_index
+
 
 def _retrieve_and_rerank(text, settings, embedder, vector_store, sparse_index, top_n):
     fused = retrieve(
@@ -62,6 +67,7 @@ def _retrieve_and_rerank(text, settings, embedder, vector_store, sparse_index, t
     )
     reranker = CrossEncoderReranker(load_cross_encoder(settings.reranker_model_name))
     return fused, reranker.rerank(text, fused[:20], top_n=top_n)
+
 
 def ingest() -> None:
     settings, embedder, vector_store = _build_embedder_and_store()
@@ -125,8 +131,9 @@ def query(text: str, top_n: int | None = None) -> None:
 
 
 def _build_generation_components(settings):
-    if not settings.groq_api_key:
-        raise SystemExit("Set GROQ_API_KEY in .env first.")
+    credentials_error = missing_credentials_message(settings)
+    if credentials_error:
+        raise SystemExit(f"{credentials_error} Set it in .env first.")
 
     reranker = CrossEncoderReranker(load_cross_encoder(settings.reranker_model_name))
     generator = get_generator(
@@ -134,15 +141,10 @@ def _build_generation_components(settings):
         api_key=settings.groq_api_key,
         model=settings.generation_model,
     )
-    verifier = get_citation_verifier(
-        settings.generation_provider,
-        api_key=settings.groq_api_key,
-        model=settings.generation_model,
-    )
-    completeness_judge = get_completeness_judge(
-        settings.generation_provider,
-        api_key=settings.groq_api_key,
-        model=settings.generation_model,
+    verifier, completeness_judge = build_judges(settings)
+    print(
+        f"generator: {settings.generation_provider}/{settings.generation_model}  |  "
+        f"judge: {settings.judge_provider}/{settings.judge_model}"
     )
     return reranker, generator, verifier, completeness_judge
 

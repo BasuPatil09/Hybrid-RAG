@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from typing import Literal
+
 from langchain_text_splitters import (
     MarkdownHeaderTextSplitter,
     RecursiveCharacterTextSplitter,
@@ -12,6 +13,7 @@ from rag.schemas import Chunk, ChunkMetadata, Document
 
 def make_chunk_id(source: str, page: int | None, chunk_index: int) -> str:
     return f"{source}::p{page if page is not None else 0}::c{chunk_index}"
+
 
 def _build_chunk(doc: Document, content: str, section: str | None, index: int) -> Chunk:
     metadata = ChunkMetadata(
@@ -26,10 +28,12 @@ def _build_chunk(doc: Document, content: str, section: str | None, index: int) -
         metadata=metadata,
     )
 
+
 class BaseChunker(ABC):
     @abstractmethod
     def chunk(self, documents: list[Document]) -> list[Chunk]:
         pass
+
 
 class FixedSizeChunker(BaseChunker):
     def __init__(self, chunk_size: int, chunk_overlap: int) -> None:
@@ -43,6 +47,7 @@ class FixedSizeChunker(BaseChunker):
             for index, piece in enumerate(self._splitter.split_text(doc.content)):
                 chunks.append(_build_chunk(doc, piece, section=None, index=index))
         return chunks
+
 
 class StructureAwareChunker(BaseChunker):
     _HEADER_AWARE_FORMATS = frozenset({"md", "html"})

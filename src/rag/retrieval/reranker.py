@@ -1,7 +1,10 @@
 from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from typing import Protocol
+
 from rag.schemas import ScoredChunk
+
 
 class _PredictsRelevance(Protocol):
     def predict(self, pairs: list[tuple[str, str]]) -> list[float]: ...
@@ -32,6 +35,7 @@ class CrossEncoderReranker(Reranker):
         ]
         rescored.sort(key=lambda sc: sc.score, reverse=True)
         return rescored[:top_n]
+
 
 def load_cross_encoder(
     model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2",

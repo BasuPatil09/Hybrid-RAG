@@ -18,6 +18,13 @@ from rag.retrieval.fusion import reciprocal_rank_fusion
 from rag.retrieval.reranker import Reranker
 from rag.retrieval.sparse import sparse_retrieve
 from rag.schemas import ScoredChunk
+from rag.tracing import (
+    current_trace_id,
+    query_only_inputs,
+    scored_chunks_outputs,
+    traced,
+)
+
 
 class IngestionReport(BaseModel):
     documents_loaded: int
@@ -26,6 +33,7 @@ class IngestionReport(BaseModel):
     duplicates_skipped: int
     chunks_indexed: int
     stopped_early: str | None = None
+
 
 def run_ingestion(
     corpus_dir: Path,
@@ -89,6 +97,43 @@ def run_ingestion(
     )
 
 
+class RetrievalStages(BaseModel):
+    dense: list[ScoredChunk]
+    sparse: list[ScoredChunk]
+    fused: list[ScoredChunk]
+
+
+def retrieve_stages(
+    query: str,
+    embedder: Embedder,
+    vector_store: ChromaVectorStore,
+    sparse_index: SparseIndex,
+    *,
+    dense_top_k: int,
+    sparse_top_k: int,
+    rrf_k: int,
+    rrf_dense_weight: float,
+    rrf_sparse_weight: float,
+) -> RetrievalStages:
+
+    dense_results = dense_retrieve(query, embedder, vector_store, top_k=dense_top_k)
+    sparse_results = sparse_retrieve(query, sparse_index, top_k=sparse_top_k)
+    fused = reciprocal_rank_fusion(
+        dense_results,
+        sparse_results,
+        k=rrf_k,
+        dense_weight=rrf_dense_weight,
+        sparse_weight=rrf_sparse_weight,
+    )
+    return RetrievalStages(dense=dense_results, sparse=sparse_results, fused=fused)
+
+
+@traced(
+    "retrieve",
+    run_type="retriever",
+    process_inputs=query_only_inputs,
+    process_outputs=scored_chunks_outputs,
+)
 def retrieve(
     query: str,
     embedder: Embedder,
@@ -101,16 +146,17 @@ def retrieve(
     rrf_dense_weight: float,
     rrf_sparse_weight: float,
 ) -> list[ScoredChunk]:
-
-    dense_results = dense_retrieve(query, embedder, vector_store, top_k=dense_top_k)
-    sparse_results = sparse_retrieve(query, sparse_index, top_k=sparse_top_k)
-    return reciprocal_rank_fusion(
-        dense_results,
-        sparse_results,
-        k=rrf_k,
-        dense_weight=rrf_dense_weight,
-        sparse_weight=rrf_sparse_weight,
-    )
+    return retrieve_stages(
+        query,
+        embedder,
+        vector_store,
+        sparse_index,
+        dense_top_k=dense_top_k,
+        sparse_top_k=sparse_top_k,
+        rrf_k=rrf_k,
+        rrf_dense_weight=rrf_dense_weight,
+        rrf_sparse_weight=rrf_sparse_weight,
+    ).fused
 
 
 class AnsweredQuestion(BaseModel):
@@ -119,10 +165,81 @@ class AnsweredQuestion(BaseModel):
     verified: VerifiedAnswer
     confidence: ConfidenceScore
     reranked: list[ScoredChunk]
+    trace_id: str | None = None
 
     model_config = {"arbitrary_types_allowed": True}
 
 
+@traced(
+    "rerank",
+    process_inputs=lambda i: {
+        "query": i["query"],
+        "n_candidates": len(i["candidates"]),
+        "top_n": i["top_n"],
+    },
+    process_outputs=scored_chunks_outputs,
+)
+def _rerank(
+    reranker: Reranker, query: str, candidates: list[ScoredChunk], top_n: int
+) -> list[ScoredChunk]:
+    return reranker.rerank(query, candidates, top_n=top_n)
+
+
+@traced(
+    "generate",
+    process_inputs=lambda i: {"query": i["query"], "n_chunks": len(i["chunks"])},
+    process_outputs=lambda a: {
+        "answer": a.answer,
+        "is_insufficient": a.is_insufficient,
+        "cited_chunk_ids": a.cited_chunk_ids,
+    },
+)
+def _generate(generator: Generator, query: str, chunks) -> GeneratedAnswer:
+    return generator.generate(query, chunks)
+
+
+@traced(
+    "verify_citations",
+    process_inputs=lambda i: {"n_chunks": len(i["chunks"])},
+    process_outputs=lambda v: {
+        "citation_accuracy": v.citation_accuracy,
+        "claims": [
+            {"claim": c.claim, "supported": c.supported, "why": c.explanation}
+            for c in v.claim_verdicts
+        ],
+    },
+)
+def _verify(
+    answer: GeneratedAnswer, chunks, verifier: CitationVerifier
+) -> VerifiedAnswer:
+    return verify_answer(answer, chunks, verifier)
+
+
+@traced(
+    "score_confidence",
+    process_inputs=lambda i: {"query": i["query"]},
+    process_outputs=lambda c: c.model_dump(),
+)
+def _score(
+    query: str,
+    answer: GeneratedAnswer,
+    verified: VerifiedAnswer,
+    reranked: list[ScoredChunk],
+    completeness_judge: CompletenessJudge,
+) -> ConfidenceScore:
+    return score_answer(query, answer, verified, reranked, completeness_judge)
+
+
+@traced(
+    "rag.answer_question",
+    process_inputs=query_only_inputs,
+    process_outputs=lambda r: {
+        "answer": r.answer.answer,
+        "is_insufficient": r.answer.is_insufficient,
+        "cited_chunk_ids": r.answer.cited_chunk_ids,
+        "confidence": r.confidence.model_dump(),
+    },
+)
 def answer_question(
     query: str,
     embedder: Embedder,
@@ -153,12 +270,12 @@ def answer_question(
         rrf_dense_weight=rrf_dense_weight,
         rrf_sparse_weight=rrf_sparse_weight,
     )
-    reranked = reranker.rerank(query, fused[:rerank_candidate_pool], top_n=top_n)
+    reranked = _rerank(reranker, query, fused[:rerank_candidate_pool], top_n)
     chunks = [r.chunk for r in reranked]
 
-    answer = generator.generate(query, chunks)
-    verified = verify_answer(answer, chunks, verifier)
-    confidence = score_answer(query, answer, verified, reranked, completeness_judge)
+    answer = _generate(generator, query, chunks)
+    verified = _verify(answer, chunks, verifier)
+    confidence = _score(query, answer, verified, reranked, completeness_judge)
 
     return AnsweredQuestion(
         query=query,
@@ -166,4 +283,5 @@ def answer_question(
         verified=verified,
         confidence=confidence,
         reranked=reranked,
+        trace_id=current_trace_id(),
     )

@@ -14,37 +14,22 @@ function confidenceClass(fraction) {
   if (fraction >= 0.4) return "is-mid";
   return "is-low";
 }
+const API_PREFIX = "/console";
+const LEGACY_API_KEY_STORAGE_KEY = "rag-api-key";
 
-const API_KEY_STORAGE_KEY = "rag-api-key";
-
-function getStoredApiKey() {
-  return sessionStorage.getItem(API_KEY_STORAGE_KEY) || "";
-}
-
-function promptForApiKey() {
-  const key =
-    window.prompt("This server requires an API key. Enter it now:") || "";
-  sessionStorage.setItem(API_KEY_STORAGE_KEY, key);
-  return key;
+function purgeLegacyStoredKey() {
+  // Older builds prompted for the key and kept it in sessionStorage.
+  try {
+    sessionStorage.removeItem(LEGACY_API_KEY_STORAGE_KEY);
+  } catch (storageError) {}
 }
 
 async function apiFetch(path, options) {
-  const requestOptions = options || {};
-
-  const attempt = async (apiKey) => {
-    const headers = new Headers(requestOptions.headers || {});
-    if (apiKey) headers.set("X-API-Key", apiKey);
-    try {
-      return await fetch(path, { ...requestOptions, headers });
-    } catch (networkError) {
-      throw new Error("Could not reach the server. Is the container running?");
-    }
-  };
-
-  let response = await attempt(getStoredApiKey());
-
-  if (response.status === 401) {
-    response = await attempt(promptForApiKey());
+  let response;
+  try {
+    response = await fetch(path, options || {});
+  } catch (networkError) {
+    throw new Error("Could not reach the server. Is the container running?");
   }
 
   let body = null;
@@ -53,6 +38,16 @@ async function apiFetch(path, options) {
   } catch (parseError) {}
 
   if (!response.ok) {
+    const consoleDisabled =
+      path.startsWith(API_PREFIX) &&
+      response.status === 404 &&
+      body &&
+      body.detail === "Not Found";
+    if (consoleDisabled) {
+      throw new Error(
+        "The browser console is disabled on this server (CONSOLE_ENABLED=false). Use the /v1 API with an API key instead.",
+      );
+    }
     const detail =
       body && body.detail ? body.detail : `Request failed (${response.status})`;
     throw new Error(
@@ -201,7 +196,7 @@ function initChat() {
     emptyState.hidden = true;
 
     try {
-      const data = await apiFetch("/v1/ask", {
+      const data = await apiFetch(`${API_PREFIX}/ask`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question }),
@@ -265,7 +260,7 @@ function initIngest() {
       '<div class="loading-line">Loading, chunking, embedding, and indexing the corpus</div>';
 
     try {
-      const report = await apiFetch("/v1/ingest", { method: "POST" });
+      const report = await apiFetch(`${API_PREFIX}/ingest`, { method: "POST" });
       result.innerHTML = "";
       result.appendChild(renderIngestReport(report));
     } catch (error) {
@@ -313,7 +308,7 @@ async function loadDocuments() {
   const result = document.getElementById("documents-result");
   result.innerHTML = '<div class="loading-line">Loading</div>';
   try {
-    const data = await apiFetch("/v1/documents");
+    const data = await apiFetch(`${API_PREFIX}/documents`);
     result.innerHTML = renderDocumentsTable(data);
   } catch (error) {
     result.innerHTML = `<div class="error-banner">${escapeHtml(error.message)}</div>`;
@@ -409,7 +404,7 @@ function initEval() {
       '<div class="loading-line">Running the golden set through the full pipeline &mdash; this can take a few minutes</div>';
 
     try {
-      const data = await apiFetch("/v1/eval", { method: "POST" });
+      const data = await apiFetch(`${API_PREFIX}/eval`, { method: "POST" });
       result.innerHTML =
         renderEvalSummary(data.summary) + renderEvalResultsTable(data.results);
       attachEvalRowExpansion(result);
@@ -506,7 +501,7 @@ async function loadObservability() {
   const result = document.getElementById("observability-result");
   result.innerHTML = '<div class="loading-line">Loading</div>';
   try {
-    const data = await apiFetch("/v1/observability");
+    const data = await apiFetch(`${API_PREFIX}/observability`);
     result.innerHTML =
       renderObservabilitySummary(data.summary) +
       renderObservabilityTable(data.recent_events);
@@ -522,6 +517,7 @@ function initObservability() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  purgeLegacyStoredKey();
   initTabs();
   checkHealth();
   initChat();

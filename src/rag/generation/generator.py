@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from rag.generation.text_utils import normalize_punctuation
 from rag.retry_utils import call_with_transport_retry
 from rag.schemas import Chunk
+from rag.tracing import span, usage_metadata
 
 _SYSTEM_PROMPT = """You are a question-answering assistant. Answer ONLY using the numbered source excerpts given in the user message — never use outside knowledge, even if you are confident it is correct.
 
@@ -104,15 +105,35 @@ class GroqGenerator(Generator):
         return result
 
     def _call_groq(self, user_prompt: str) -> str:
-        response = self._client.chat.completions.create(
-            model=self._model,
-            messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.0,
-        )
-        return response.choices[0].message.content
+        messages = [
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ]
+        with span(
+            "groq.chat",
+            "llm",
+            inputs={"messages": messages},
+            metadata={
+                "ls_provider": "groq",
+                "ls_model_name": self._model,
+                "ls_temperature": 0.0,
+            },
+        ) as run:
+            response = self._client.chat.completions.create(
+                model=self._model, messages=messages, temperature=0.0
+            )
+            text = response.choices[0].message.content
+            usage = getattr(response, "usage", None)
+            run.end(
+                outputs={
+                    "output": text,
+                    "usage_metadata": usage_metadata(
+                        getattr(usage, "prompt_tokens", None),
+                        getattr(usage, "completion_tokens", None),
+                    ),
+                }
+            )
+        return text
 
 
 def get_generator(provider: str, *, api_key: str, model: str) -> Generator:

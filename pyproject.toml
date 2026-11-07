@@ -16,12 +16,22 @@ dependencies = [
     "lxml>=6.0",
     "pypdf>=5.9",
     "groq>=1.6,<2.0",
+    "google-genai>=2.34,<3.0",  # Gemini judge models (citation verification + completeness)
+    "langsmith>=0.14,<1.0",  # tracing; inert unless LANGSMITH_TRACING=true (~40 MB)
     "httpx>=0.28",
     "numpy>=1.26",
     "sentence-transformers>=5.6,<6.0",  # cross-encoder reranker (Phase 2) + local embeddings
 ]
 
 [project.optional-dependencies]
+# RAGAS evaluation. Deliberately NOT in the API image: the stack (pandas, scipy,
+# scikit-network, langchain-*) is ~290 MB. Install on the machine that runs
+# scripts/eval_cli.py:  pip install -e ".[eval]"
+eval = [
+    "ragas>=0.4.3,<0.5",
+    "langchain-community<0.4",  # ragas 0.4.3 imports a path removed in 0.4
+    "openai>=1.109,<2.0",  # Gemini's OpenAI-compatible endpoint, used as the RAGAS judge
+]
 dev = [
     "pytest>=8.3",
     "pytest-cov>=6.0",

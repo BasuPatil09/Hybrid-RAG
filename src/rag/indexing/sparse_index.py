@@ -1,13 +1,18 @@
 from __future__ import annotations
+
 import re
 from typing import Callable
+
 from rank_bm25 import BM25Okapi
+
 from rag.schemas import Chunk, ScoredChunk
 
 _TOKEN_PATTERN = re.compile(r"\w+")
 
+
 def default_tokenizer(text: str) -> list[str]:
     return _TOKEN_PATTERN.findall(text.lower())
+
 
 class SparseIndex:
     def __init__(self, tokenizer: Callable[[str], list[str]] | None = None) -> None:

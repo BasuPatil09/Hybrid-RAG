@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 _PUNCTUATION_NORMALIZATION_MAP = {
     "\u2010": "-",
     "\u2011": "-",
@@ -11,8 +12,13 @@ _PUNCTUATION_NORMALIZATION_MAP = {
     "\u00a0": " ",
 }
 
+
 def normalize_punctuation(text: str) -> str:
 
     for unicode_char, ascii_char in _PUNCTUATION_NORMALIZATION_MAP.items():
         text = text.replace(unicode_char, ascii_char)
     return text
+
+
+def strip_markdown_emphasis(text: str) -> str:
+    return text.replace("**", "").replace("`", "")

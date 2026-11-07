@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -20,14 +21,18 @@ _HEADING_PREFIXES: dict[str, str] = {
     "h6": "######",
 }
 
+
 class UnsupportedFormatError(ValueError):
     pass
 
+
 class BaseLoader(ABC):
     extensions: ClassVar[frozenset[str]]
+
     @abstractmethod
     def load(self, path: Path) -> list[Document]:
         pass
+
 
 class TextLoader(BaseLoader):
     extensions: ClassVar[frozenset[str]] = frozenset({".txt"})
@@ -41,6 +46,7 @@ class TextLoader(BaseLoader):
             )
         ]
 
+
 class MarkdownLoader(BaseLoader):
     extensions: ClassVar[frozenset[str]] = frozenset({".md", ".markdown"})
 
@@ -52,6 +58,7 @@ class MarkdownLoader(BaseLoader):
                 metadata=DocumentMetadata(source=str(path), format="md"),
             )
         ]
+
 
 class HTMLLoader(BaseLoader):
     extensions: ClassVar[frozenset[str]] = frozenset({".html", ".htm"})
@@ -91,6 +98,7 @@ class HTMLLoader(BaseLoader):
 
 class PDFLoader(BaseLoader):
     extensions: ClassVar[frozenset[str]] = frozenset({".pdf"})
+
     def __init__(self, min_chars: int = 20) -> None:
         self._min_chars = min_chars
 
@@ -118,6 +126,7 @@ class PDFLoader(BaseLoader):
             )
         return documents
 
+
 def _default_loaders(*, pdf_min_page_chars: int = 20) -> list[BaseLoader]:
     return [
         TextLoader(),
@@ -125,6 +134,7 @@ def _default_loaders(*, pdf_min_page_chars: int = 20) -> list[BaseLoader]:
         HTMLLoader(),
         PDFLoader(min_chars=pdf_min_page_chars),
     ]
+
 
 class DocumentLoaderRegistry:
     def __init__(

@@ -1,10 +1,15 @@
 from __future__ import annotations
+
 from typing import Any
+
 import chromadb
+
 from rag.schemas import Chunk, ChunkMetadata, ScoredChunk
+
 
 def _metadata_to_chroma(metadata: ChunkMetadata) -> dict[str, Any]:
     return {k: v for k, v in metadata.model_dump().items() if v is not None}
+
 
 class ChromaVectorStore:
     def __init__(self, client: chromadb.ClientAPI, collection_name: str) -> None:

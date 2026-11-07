@@ -77,6 +77,26 @@ class TestExtractClaims:
         assert extract_claims("", [_chunk("a", "x")]) == []
 
 
+class TestExtractClaimsCitationAfterPeriod:
+    def test_marker_after_the_period_stays_attached_to_its_sentence(self) -> None:
+        chunks = [_chunk("a", "x"), _chunk("b", "y"), _chunk("c", "z")]
+        claims = extract_claims(
+            "I answer questions rather than act autonomously. [2][3]", chunks
+        )
+        assert len(claims) == 1
+        assert claims[0].text == "I answer questions rather than act autonomously."
+        assert [c.id for c in claims[0].chunks] == ["b", "c"]
+
+    def test_never_produces_a_claim_with_empty_text(self) -> None:
+        claims = extract_claims("[1]", [_chunk("a", "x")])
+        assert claims == []
+
+    def test_following_sentence_still_splits_normally(self) -> None:
+        chunks = [_chunk("a", "x"), _chunk("b", "y")]
+        claims = extract_claims("First claim. [1] Second claim. [2]", chunks)
+        assert [c.text for c in claims] == ["First claim.", "Second claim."]
+
+
 class TestCombineChunkContents:
     def test_single_chunk_passes_through_unchanged(self) -> None:
 

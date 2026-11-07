@@ -1,10 +1,13 @@
 from __future__ import annotations
+
 import numpy as np
+
 
 def _cosine_similarity_matrix(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     a_norm = a / np.linalg.norm(a, axis=1, keepdims=True)
     b_norm = b / np.linalg.norm(b, axis=1, keepdims=True)
     return a_norm @ b_norm.T
+
 
 def find_duplicate_indices(
     new_embeddings: list[list[float]],

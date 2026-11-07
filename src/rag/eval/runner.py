@@ -25,6 +25,7 @@ class EvalResult(BaseModel):
     retrieval_confidence: float
     composite_confidence: float
 
+
 class EvalSummary(BaseModel):
     total_questions: int
     behavior_match_rate: float
@@ -33,6 +34,7 @@ class EvalSummary(BaseModel):
     mean_retrieval_confidence: float
     mean_composite_confidence: float
 
+
 def _behavior_matches(expected: str, is_insufficient: bool) -> bool:
 
     if expected == "answerable":
@@ -40,6 +42,7 @@ def _behavior_matches(expected: str, is_insufficient: bool) -> bool:
     if expected == "insufficient_context":
         return is_insufficient
     return True
+
 
 def run_eval_suite(
     questions: list[GoldenQuestion],
@@ -93,6 +96,7 @@ def run_eval_suite(
             )
         )
     return results
+
 
 def summarize(results: list[EvalResult]) -> EvalSummary:
     if not results:

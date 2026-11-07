@@ -1,5 +1,7 @@
 from __future__ import annotations
+
 from rag.schemas import Chunk, ScoredChunk
+
 
 def reciprocal_rank_fusion(
     dense_results: list[ScoredChunk],

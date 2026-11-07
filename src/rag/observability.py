@@ -1,9 +1,11 @@
 from __future__ import annotations
+
 import logging
 import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
+
 from pydantic import BaseModel
 
 logger = logging.getLogger("rag.observability")

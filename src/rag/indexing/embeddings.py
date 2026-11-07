@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+
+
 class Embedder(ABC):
     @abstractmethod
     def embed(self, texts: list[str]) -> list[list[float]]:
         pass
+
     @property
     @abstractmethod
     def dimensions(self) -> int:
         pass
+
 
 class LocalEmbedder(Embedder):
     def __init__(self, model: object, dimensions: int, batch_size: int = 32) -> None:
@@ -36,6 +40,7 @@ class LocalEmbedder(Embedder):
         )
         return embeddings.tolist()
 
+
 def load_local_embedder(
     model: str = "BAAI/bge-small-en-v1.5",
     dimensions: int = 384,
@@ -50,6 +55,7 @@ def load_local_embedder(
         dimensions=dimensions,
         batch_size=batch_size,
     )
+
 
 def get_embedder(
     provider: str,

@@ -1,13 +1,32 @@
 services:
   app:
     build: .
+    init: true
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     env_file:
       - .env
+    environment:
+      OMP_NUM_THREADS: ${OMP_NUM_THREADS:-2}
+      MKL_NUM_THREADS: ${OMP_NUM_THREADS:-2}
+      TOKENIZERS_PARALLELISM: "false"
+    cpus: ${APP_CPUS:-2}
+    mem_limit: ${APP_MEM_LIMIT:-3g}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
     volumes:
       - ./data:/app/data
-      - ./eval:/app/eval
+      - ./eval:/app/eval:ro
       - hf_cache:/home/app/.cache/huggingface
 volumes:
   hf_cache:

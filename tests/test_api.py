@@ -73,10 +73,11 @@ class _ExplodingGenerator:
 
 
 def _fake_components(
-    *, has_groq_key: bool = True, seeded: bool = True
+    *, has_groq_key: bool = True, has_gemini_key: bool = True, seeded: bool = True
 ) -> AppComponents:
     settings = get_settings()
     settings.groq_api_key = "fake-key" if has_groq_key else ""
+    settings.gemini_api_key = "fake-gemini-key" if has_gemini_key else ""
     embedder = FakeEmbedder()
     vector_store = ChromaVectorStore(
         chromadb.EphemeralClient(), f"api_test_{uuid.uuid4().hex[:12]}"
@@ -114,6 +115,8 @@ def _clear_overrides():
         settings.ask_rate_limit,
         settings.ingest_rate_limit,
         settings.eval_rate_limit,
+        settings.console_enabled,
+        settings.judge_provider,
     )
     limiter.reset()
     yield
@@ -123,6 +126,8 @@ def _clear_overrides():
         settings.ask_rate_limit,
         settings.ingest_rate_limit,
         settings.eval_rate_limit,
+        settings.console_enabled,
+        settings.judge_provider,
     ) = original
     limiter.reset()
 
@@ -195,6 +200,128 @@ class TestApiSecurity:
         assert _docs_urls("development") == ("/docs", "/redoc")
 
 
+_LOCAL = {"host": "localhost:8000"}
+
+
+@pytest.fixture
+def local_client() -> TestClient:
+    return TestClient(app, base_url="http://localhost:8000")
+
+
+class TestConsoleRoutes:
+    def test_console_works_without_any_api_key_even_when_one_is_configured(
+        self, local_client: TestClient
+    ) -> None:
+        components = _fake_components()
+        components.settings.app_api_key = "shared-test-key"
+        app.dependency_overrides[get_components] = lambda: components
+
+        assert local_client.get("/v1/documents").status_code == 401
+        assert local_client.get("/console/documents").status_code == 200
+        response = local_client.post("/console/ask", json={"question": "a question"})
+        assert response.status_code == 200
+        assert response.json()["answer"]["is_insufficient"] is False
+
+    def test_console_ingest_eval_and_observability_are_reachable(
+        self, local_client: TestClient, tmp_path
+    ) -> None:
+        (tmp_path / "notes.md").write_text("# Note\n\nSome real content here.")
+        components = _fake_components(seeded=False)
+        components.settings.corpus_dir = tmp_path
+        app.dependency_overrides[get_components] = lambda: components
+
+        assert local_client.post("/console/ingest").status_code == 200
+        assert local_client.get("/console/observability").status_code == 200
+
+    def test_disabled_console_returns_404_for_every_console_route(
+        self, local_client: TestClient
+    ) -> None:
+        components = _fake_components()
+        components.settings.console_enabled = False
+        app.dependency_overrides[get_components] = lambda: components
+
+        assert local_client.get("/console/documents").status_code == 404
+        assert (
+            local_client.post("/console/ask", json={"question": "q"}).status_code == 404
+        )
+
+    def test_disallowed_host_header_is_rejected_to_block_dns_rebinding(
+        self, client: TestClient
+    ) -> None:
+        app.dependency_overrides[get_components] = lambda: _fake_components()
+        response = client.get("/console/documents", headers={"host": "evil.example"})
+        assert response.status_code == 403
+
+    def test_cross_origin_request_is_rejected_to_block_csrf(
+        self, local_client: TestClient
+    ) -> None:
+        app.dependency_overrides[get_components] = lambda: _fake_components()
+        response = local_client.post(
+            "/console/ask",
+            json={"question": "q"},
+            headers={"origin": "https://evil.example"},
+        )
+        assert response.status_code == 403
+
+    def test_same_origin_request_with_origin_header_is_allowed(
+        self, local_client: TestClient
+    ) -> None:
+        app.dependency_overrides[get_components] = lambda: _fake_components()
+        response = local_client.post(
+            "/console/ask",
+            json={"question": "q"},
+            headers={"origin": "http://localhost:8000"},
+        )
+        assert response.status_code == 200
+
+    def test_ipv4_and_ipv6_loopback_hosts_are_allowed(self, client: TestClient) -> None:
+        app.dependency_overrides[get_components] = lambda: _fake_components()
+        for host in ("127.0.0.1:8000", "[::1]:8000", "LOCALHOST"):
+            response = client.get("/console/documents", headers={"host": host})
+            assert response.status_code == 200, host
+
+    def test_console_routes_are_hidden_from_the_openapi_schema(
+        self, client: TestClient
+    ) -> None:
+        paths = client.get("/openapi.json").json()["paths"]
+        assert "/v1/ask" in paths
+        assert not any(path.startswith("/console") for path in paths)
+
+    def test_v1_and_console_share_one_rate_limit_bucket(
+        self, local_client: TestClient
+    ) -> None:
+        components = _fake_components()
+        components.settings.ask_rate_limit = "1/minute"
+        app.dependency_overrides[get_components] = lambda: components
+
+        assert (
+            local_client.post("/console/ask", json={"question": "a"}).status_code == 200
+        )
+        assert local_client.post("/v1/ask", json={"question": "b"}).status_code == 429
+
+
+class TestJudgeCredentials:
+    def test_missing_gemini_key_returns_503_when_gemini_is_the_judge(
+        self, client: TestClient
+    ) -> None:
+        app.dependency_overrides[get_components] = lambda: _fake_components(
+            has_gemini_key=False
+        )
+        response = client.post("/v1/ask", json={"question": "a question"})
+        assert response.status_code == 503
+        assert "GEMINI_API_KEY" in response.json()["detail"]
+
+    def test_gemini_key_not_required_when_judge_is_groq(
+        self, client: TestClient
+    ) -> None:
+        components = _fake_components(has_gemini_key=False)
+        components.settings.judge_provider = "groq"
+        app.dependency_overrides[get_components] = lambda: components
+        assert (
+            client.post("/v1/ask", json={"question": "a question"}).status_code == 200
+        )
+
+
 class TestErrorSafety:
     def test_unhandled_error_response_does_not_include_internal_details(self) -> None:
         components = _fake_components()
@@ -238,6 +365,24 @@ class TestErrorSafety:
         logged_error = components.observability_log.read_recent(1)[0].error
         assert secret not in (logged_error or "")
         assert "[REDACTED]" in (logged_error or "")
+
+    def test_gemini_key_is_redacted_before_observability_logging(self) -> None:
+        secret = "AIza-fake-gemini-key"
+        components = _fake_components()
+        components.settings.gemini_api_key = secret
+        components.generator = _ExplodingGenerator(
+            RuntimeError(f"request failed for key={secret}")
+        )
+        app.dependency_overrides[get_components] = lambda: components
+
+        safe_client = TestClient(app, raise_server_exceptions=False)
+        assert (
+            safe_client.post("/v1/ask", json={"question": "a question"}).status_code
+            == 500
+        )
+
+        logged_error = components.observability_log.read_recent(1)[0].error
+        assert secret not in (logged_error or "")
 
 
 class TestAsk:

@@ -1,11 +1,15 @@
 from __future__ import annotations
+
 import math
 import re
 from abc import ABC, abstractmethod
 from typing import Callable
+
 from pydantic import BaseModel, computed_field
+
+from rag.generation.gemini_client import GeminiTextClient, TextClient
 from rag.generation.generator import GeneratedAnswer
-from rag.generation.text_utils import normalize_punctuation
+from rag.generation.text_utils import normalize_punctuation, strip_markdown_emphasis
 from rag.generation.verification import VerifiedAnswer
 from rag.retry_utils import call_with_transport_retry
 from rag.schemas import ScoredChunk
@@ -19,13 +23,16 @@ SCORE: <integer 0-100> - <one sentence explanation>
 
 If the ANSWER explicitly says the available context is insufficient to answer, score it 100. Correctly declining to guess is a complete, correct response to a question the source material can't support — not an incomplete one.
 """
+
 _SCORE_PATTERN = re.compile(r"SCORE\s*:\s*(\d+)\s*-?\s*(.*)", re.IGNORECASE | re.DOTALL)
+
 
 def _sigmoid(x: float) -> float:
     return 1.0 / (1.0 + math.exp(-x))
 
+
 def _parse_completeness(raw: str) -> tuple[float, str]:
-    raw = normalize_punctuation(raw)
+    raw = strip_markdown_emphasis(normalize_punctuation(raw))
     match = _SCORE_PATTERN.search(raw.strip())
     if match:
         score = max(0, min(100, int(match.group(1))))
@@ -37,10 +44,12 @@ def _parse_completeness(raw: str) -> tuple[float, str]:
         f"Judge response did not match the expected format: {raw.strip()[:200]!r}",
     )
 
+
 class CompletenessJudge(ABC):
     @abstractmethod
     def judge(self, query: str, answer_text: str) -> tuple[float, str]:
         pass
+
 
 class GroqCompletenessJudge(CompletenessJudge):
     def __init__(
@@ -77,12 +86,32 @@ class GroqCompletenessJudge(CompletenessJudge):
         )
         return _parse_completeness(raw)
 
+
+class GeminiCompletenessJudge(CompletenessJudge):
+    def __init__(self, client: TextClient) -> None:
+        self._client = client
+
+    def judge(self, query: str, answer_text: str) -> tuple[float, str]:
+        raw = self._client.complete(
+            _COMPLETENESS_PROMPT, f"QUESTION: {query}\n\nANSWER: {answer_text}"
+        )
+        return _parse_completeness(raw)
+
+
 def get_completeness_judge(
-    provider: str, *, api_key: str, model: str
+    provider: str,
+    *,
+    api_key: str,
+    model: str,
+    text_client: TextClient | None = None,
 ) -> CompletenessJudge:
     if provider == "groq":
         return GroqCompletenessJudge(api_key=api_key, model=model)
+    if provider == "gemini":
+        client = text_client or GeminiTextClient(api_key=api_key, model=model)
+        return GeminiCompletenessJudge(client)
     raise ValueError(f"Unknown completeness judge provider: {provider!r}")
+
 
 def compute_retrieval_confidence(
     cited_chunk_ids: list[str], reranked: list[ScoredChunk]
@@ -95,6 +124,7 @@ def compute_retrieval_confidence(
     if not relevant_scores:
         return 0.0
     return sum(_sigmoid(s) for s in relevant_scores) / len(relevant_scores)
+
 
 class ConfidenceScore(BaseModel):
     retrieval_confidence: float
@@ -111,6 +141,7 @@ class ConfidenceScore(BaseModel):
             + self.citation_coverage
             + self.answer_completeness
         ) / 3
+
 
 def score_answer(
     query: str,

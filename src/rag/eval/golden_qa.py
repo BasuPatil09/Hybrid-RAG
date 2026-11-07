@@ -18,21 +18,27 @@ _VALID_BEHAVIORS = {
     "ambiguous",
 }
 
+
 class GoldenQuestion(BaseModel):
     id: str
     category: str
     question: str
     expected_behavior: str
     source_hint: str = ""
+    reference: str = ""
+
 
 def load_golden_questions(
     csv_path: Path,
     *,
     approved_only: bool = True,
 ) -> list[GoldenQuestion]:
+
     questions: list[GoldenQuestion] = []
+
     with open(csv_path, newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
+
         for row in reader:
             row_id = row.get("id", "<unknown>")
 
@@ -54,6 +60,7 @@ def load_golden_questions(
 
             if approved_only and row.get("approved", "").strip().lower() not in _TRUTHY:
                 continue
+
             question = row.get("question", "").strip()
             correction = row.get("your_correction", "").strip()
             question_text = correction or question
@@ -68,6 +75,8 @@ def load_golden_questions(
                     question=question_text,
                     expected_behavior=expected_behavior,
                     source_hint=row.get("source_hint", "").strip(),
+                    reference=row.get("reference", "").strip(),
                 )
             )
+
     return questions

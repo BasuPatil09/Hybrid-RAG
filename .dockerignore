@@ -1,7 +1,10 @@
+# Virtual environments
 .venv/
 venv/
 .env/
 .env
+
+# Python cache
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -9,10 +12,16 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 __pycache__
+
+# Version control
 .git/
 .gitignore
+
+# IDE
 .vscode/
 .idea/
+
+# Data / model / vector-store artifacts
 data/
 models/
 *.faiss
@@ -22,9 +31,25 @@ vector_store/
 .cache/
 *.bin
 *.safetensors
+
+# Not needed to build the image (the Dockerfile copies only
+# requirements.txt, pyproject.toml, src/ and static/)
+tests/
+scripts/
+eval/
+*.md
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Node
 node_modules/
+
+# Logs / notebooks
 *.log
 logs/
 .ipynb_checkpoints/
+
+# OS
 .DS_Store
 Thumbs.db

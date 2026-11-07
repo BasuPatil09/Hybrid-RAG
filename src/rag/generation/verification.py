@@ -5,8 +5,10 @@ from abc import ABC, abstractmethod
 from typing import Callable
 
 from pydantic import BaseModel
+
+from rag.generation.gemini_client import GeminiTextClient, TextClient
 from rag.generation.generator import GeneratedAnswer
-from rag.generation.text_utils import normalize_punctuation
+from rag.generation.text_utils import normalize_punctuation, strip_markdown_emphasis
 from rag.retry_utils import call_with_transport_retry
 from rag.schemas import Chunk
 
@@ -21,10 +23,13 @@ Use only the SOURCE TEXT to judge — not outside knowledge, not what seems plau
 If the CLAIM contains multiple parts (for example, joined by "and"), every part must be directly supported by the SOURCE TEXT for the verdict to be SUPPORTED. If any part is missing from the source, the verdict is NOT_SUPPORTED even if the rest of the claim is correct — do not fill in a missing part with what is "commonly understood" or "usually true." That is outside knowledge, and using it here is exactly the failure mode this judgment exists to prevent.
 """
 
+
 _SENTENCE_SPLIT_PATTERN = re.compile(r"(?<=[.!?])\s+(?=[A-Z\[])")
 _CITATION_PATTERN = re.compile(r"\[(\d+)\]")
 _CITATION_WITH_LEADING_SPACE_PATTERN = re.compile(r"\s*\[(\d+)\]")
 _CHUNK_SEPARATOR = "\n\n---\n\n"
+_TRAILING_CITATION_PATTERN = re.compile(r"([.!?])\s*((?:\[\d+\])+)")
+
 
 class Claim(BaseModel):
     text: str
@@ -62,11 +67,14 @@ def _combine_chunk_contents(chunks: list[Chunk]) -> str:
 def extract_claims(answer_text: str, chunks: list[Chunk]) -> list[Claim]:
 
     claims: list[Claim] = []
+    answer_text = _TRAILING_CITATION_PATTERN.sub(r" \2\1", answer_text)
     for sentence in _SENTENCE_SPLIT_PATTERN.split(answer_text.strip()):
         indices = _CITATION_PATTERN.findall(sentence)
         if not indices:
             continue
         clean_text = _CITATION_WITH_LEADING_SPACE_PATTERN.sub("", sentence).strip()
+        if not clean_text:
+            continue
         cited_chunks = [
             chunks[int(index_str) - 1]
             for index_str in dict.fromkeys(indices)
@@ -85,7 +93,7 @@ _VERDICT_PATTERN = re.compile(
 
 def _parse_verdict(raw: str) -> tuple[bool, str]:
 
-    raw = normalize_punctuation(raw)
+    raw = strip_markdown_emphasis(normalize_punctuation(raw))
     matches = list(_VERDICT_PATTERN.finditer(raw.strip()))
     if matches:
         last = matches[-1]
@@ -140,11 +148,30 @@ class GroqCitationVerifier(CitationVerifier):
         return _parse_verdict(raw)
 
 
+class GeminiCitationVerifier(CitationVerifier):
+    def __init__(self, client: TextClient) -> None:
+        self._client = client
+
+    def verify_claim(self, claim_text: str, source_text: str) -> tuple[bool, str]:
+        raw = self._client.complete(
+            _JUDGE_SYSTEM_PROMPT,
+            f"CLAIM: {claim_text}\n\nSOURCE TEXT: {source_text}",
+        )
+        return _parse_verdict(raw)
+
+
 def get_citation_verifier(
-    provider: str, *, api_key: str, model: str
+    provider: str,
+    *,
+    api_key: str,
+    model: str,
+    text_client: TextClient | None = None,
 ) -> CitationVerifier:
     if provider == "groq":
         return GroqCitationVerifier(api_key=api_key, model=model)
+    if provider == "gemini":
+        client = text_client or GeminiTextClient(api_key=api_key, model=model)
+        return GeminiCitationVerifier(client)
     raise ValueError(f"Unknown citation verification provider: {provider!r}")
 
 

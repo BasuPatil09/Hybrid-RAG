@@ -4,7 +4,7 @@ import time
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -16,10 +16,12 @@ from rag.api.dependencies import (
     build_components,
     get_components,
     require_api_key,
+    require_console_access,
 )
 from rag.config import get_settings
 from rag.eval.golden_qa import load_golden_questions
 from rag.eval.runner import EvalResult, EvalSummary, run_eval_suite, summarize
+from rag.generation.judges import missing_credentials_message
 from rag.observability import (
     ObservabilityEvent,
     ObservabilitySummary,
@@ -34,13 +36,18 @@ from rag.pipeline import (
     run_ingestion,
 )
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.components = build_components(get_settings())
     yield
+    app.state.components.tracer.flush()
+
 
 def _docs_urls(environment: str) -> tuple[str | None, str | None]:
+
     return (None, None) if environment == "production" else ("/docs", "/redoc")
+
 
 settings = get_settings()
 docs_url, redoc_url = _docs_urls(settings.environment)
@@ -55,19 +62,21 @@ limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+router = APIRouter()
+
+
 @app.get("/health")
 def health_check() -> dict[str, str]:
 
     return {"status": "ok"}
 
+
 class AskRequest(BaseModel):
     question: str = Field(max_length=settings.ask_max_question_length)
 
 
-@app.post(
-    "/v1/ask", response_model=AnsweredQuestion, dependencies=[Depends(require_api_key)]
-)
-@limiter.limit(lambda: get_settings().ask_rate_limit)
+@router.post("/ask", response_model=AnsweredQuestion)
+@limiter.shared_limit(lambda: get_settings().ask_rate_limit, scope="ask")
 def ask(
     request: Request,
     ask_request: AskRequest,
@@ -75,10 +84,9 @@ def ask(
 ) -> AnsweredQuestion:
     if not ask_request.question.strip():
         raise HTTPException(status_code=400, detail="question must not be empty.")
-    if not components.settings.groq_api_key:
-        raise HTTPException(
-            status_code=503, detail="GROQ_API_KEY is not configured on the server."
-        )
+    credentials_error = missing_credentials_message(components.settings)
+    if credentials_error:
+        raise HTTPException(status_code=503, detail=credentials_error)
     if components.vector_store.count() == 0:
         raise HTTPException(
             status_code=503, detail="Nothing indexed yet -- call POST /v1/ingest first."
@@ -87,22 +95,23 @@ def ask(
     settings = components.settings
     start = time.perf_counter()
     try:
-        result = answer_question(
-            ask_request.question,
-            components.embedder,
-            components.vector_store,
-            components.sparse_index,
-            components.reranker,
-            components.generator,
-            components.verifier,
-            components.completeness_judge,
-            dense_top_k=settings.dense_top_k,
-            sparse_top_k=settings.sparse_top_k,
-            rrf_k=settings.rrf_k,
-            rrf_dense_weight=settings.rrf_dense_weight,
-            rrf_sparse_weight=settings.rrf_sparse_weight,
-            top_n=settings.rerank_top_n,
-        )
+        with components.tracer.scope(tags=["api"]):
+            result = answer_question(
+                ask_request.question,
+                components.embedder,
+                components.vector_store,
+                components.sparse_index,
+                components.reranker,
+                components.generator,
+                components.verifier,
+                components.completeness_judge,
+                dense_top_k=settings.dense_top_k,
+                sparse_top_k=settings.sparse_top_k,
+                rrf_k=settings.rrf_k,
+                rrf_dense_weight=settings.rrf_dense_weight,
+                rrf_sparse_weight=settings.rrf_sparse_weight,
+                top_n=settings.rerank_top_n,
+            )
     except Exception as exc:
         components.observability_log.record(
             ObservabilityEvent(
@@ -110,7 +119,12 @@ def ask(
                 event_type="ask",
                 latency_ms=(time.perf_counter() - start) * 1000,
                 success=False,
-                error=redact_error(exc, settings.groq_api_key, settings.app_api_key),
+                error=redact_error(
+                    exc,
+                    settings.groq_api_key,
+                    settings.gemini_api_key,
+                    settings.app_api_key,
+                ),
                 question=ask_request.question,
             )
         )
@@ -136,12 +150,9 @@ def ask(
     )
     return result
 
-@app.post(
-    "/v1/ingest",
-    response_model=IngestionReport,
-    dependencies=[Depends(require_api_key)],
-)
-@limiter.limit(lambda: get_settings().ingest_rate_limit)
+
+@router.post("/ingest", response_model=IngestionReport)
+@limiter.shared_limit(lambda: get_settings().ingest_rate_limit, scope="ingest")
 def ingest(
     request: Request, components: AppComponents = Depends(get_components)
 ) -> IngestionReport:
@@ -165,7 +176,12 @@ def ingest(
                 event_type="ingest",
                 latency_ms=(time.perf_counter() - start) * 1000,
                 success=False,
-                error=redact_error(exc, settings.groq_api_key, settings.app_api_key),
+                error=redact_error(
+                    exc,
+                    settings.groq_api_key,
+                    settings.gemini_api_key,
+                    settings.app_api_key,
+                ),
             )
         )
         raise
@@ -182,19 +198,18 @@ def ingest(
     )
     return report
 
+
 class DocumentSummary(BaseModel):
     source: str
     chunk_count: int
+
 
 class DocumentsResponse(BaseModel):
     total_chunks: int
     documents: list[DocumentSummary]
 
-@app.get(
-    "/v1/documents",
-    response_model=DocumentsResponse,
-    dependencies=[Depends(require_api_key)],
-)
+
+@router.get("/documents", response_model=DocumentsResponse)
 def list_documents(
     components: AppComponents = Depends(get_components),
 ) -> DocumentsResponse:
@@ -212,22 +227,21 @@ class EvalResponse(BaseModel):
     summary: EvalSummary
     results: list[EvalResult]
 
-@app.post(
-    "/v1/eval", response_model=EvalResponse, dependencies=[Depends(require_api_key)]
-)
-@limiter.limit(lambda: get_settings().eval_rate_limit)
+
+@router.post("/eval", response_model=EvalResponse)
+@limiter.shared_limit(lambda: get_settings().eval_rate_limit, scope="eval")
 def run_eval(
     request: Request, components: AppComponents = Depends(get_components)
 ) -> EvalResponse:
 
-    if not components.settings.groq_api_key:
-        raise HTTPException(
-            status_code=503, detail="GROQ_API_KEY is not configured on the server."
-        )
+    credentials_error = missing_credentials_message(components.settings)
+    if credentials_error:
+        raise HTTPException(status_code=503, detail=credentials_error)
     if components.vector_store.count() == 0:
         raise HTTPException(
             status_code=503, detail="Nothing indexed yet -- call POST /v1/ingest first."
         )
+
     questions = load_golden_questions(components.settings.golden_qa_path)
     if not questions:
         raise HTTPException(
@@ -238,25 +252,27 @@ def run_eval(
                 f"drafts don't count as ground truth."
             ),
         )
+
     settings = components.settings
     start = time.perf_counter()
     try:
-        results = run_eval_suite(
-            questions,
-            components.embedder,
-            components.vector_store,
-            components.sparse_index,
-            components.reranker,
-            components.generator,
-            components.verifier,
-            components.completeness_judge,
-            dense_top_k=settings.dense_top_k,
-            sparse_top_k=settings.sparse_top_k,
-            rrf_k=settings.rrf_k,
-            rrf_dense_weight=settings.rrf_dense_weight,
-            rrf_sparse_weight=settings.rrf_sparse_weight,
-            rerank_top_n=settings.rerank_top_n,
-        )
+        with components.tracer.scope(tags=["eval", "api"]):
+            results = run_eval_suite(
+                questions,
+                components.embedder,
+                components.vector_store,
+                components.sparse_index,
+                components.reranker,
+                components.generator,
+                components.verifier,
+                components.completeness_judge,
+                dense_top_k=settings.dense_top_k,
+                sparse_top_k=settings.sparse_top_k,
+                rrf_k=settings.rrf_k,
+                rrf_dense_weight=settings.rrf_dense_weight,
+                rrf_sparse_weight=settings.rrf_sparse_weight,
+                rerank_top_n=settings.rerank_top_n,
+            )
     except Exception as exc:
         components.observability_log.record(
             ObservabilityEvent(
@@ -264,7 +280,12 @@ def run_eval(
                 event_type="eval",
                 latency_ms=(time.perf_counter() - start) * 1000,
                 success=False,
-                error=redact_error(exc, settings.groq_api_key, settings.app_api_key),
+                error=redact_error(
+                    exc,
+                    settings.groq_api_key,
+                    settings.gemini_api_key,
+                    settings.app_api_key,
+                ),
             )
         )
         raise
@@ -288,11 +309,7 @@ class ObservabilityResponse(BaseModel):
     recent_events: list[ObservabilityEvent]
 
 
-@app.get(
-    "/v1/observability",
-    response_model=ObservabilityResponse,
-    dependencies=[Depends(require_api_key)],
-)
+@router.get("/observability", response_model=ObservabilityResponse)
 def get_observability(
     limit: int = 200, components: AppComponents = Depends(get_components)
 ) -> ObservabilityResponse:
@@ -302,6 +319,16 @@ def get_observability(
         summary=summarize_observability(events), recent_events=list(reversed(events))
     )
 
-app.mount(
-    "/", StaticFiles(directory="static", html=True, check_dir=False), name="static"
+
+app.include_router(router, prefix="/v1", dependencies=[Depends(require_api_key)])
+app.include_router(
+    router,
+    prefix="/console",
+    dependencies=[Depends(require_console_access)],
+    include_in_schema=False,
 )
+
+if settings.console_enabled:
+    app.mount(
+        "/", StaticFiles(directory="static", html=True, check_dir=False), name="static"
+    )
