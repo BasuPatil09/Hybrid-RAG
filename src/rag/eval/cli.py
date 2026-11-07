@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 import argparse
@@ -38,6 +39,7 @@ from rag.pipeline import retrieve_stages
 
 Out = Callable[[str], None]
 
+
 _CALLS_PER_SAMPLE = {
     "faithfulness": 2,
     "answer_relevancy": 1,
@@ -50,7 +52,7 @@ _CALLS_PER_SAMPLE = {
 
 
 class CliError(Exception):
-    """A problem the user can fix; printed without a traceback."""
+    pass
 
 
 def _write_json(path: Path, payload: Any) -> None:
@@ -111,6 +113,9 @@ def _misses_text(report: RetrievalReport) -> list[str]:
         if missed:
             lines.append(f"  {row.question_id}: not retrieved -> {missed}")
     return ["\nRelevant pages missing from the reranked pool:", *lines] if lines else []
+
+
+
 
 
 def cmd_label_draft(
@@ -247,7 +252,6 @@ def _log_run_feedback(
     report: RetrievalReport | None,
     final_k: int,
 ) -> None:
-    """Attach every score to its trace, so LangSmith can filter/sort/chart them."""
     by_question = {r.question_id: r for r in (report.per_question if report else [])}
     for rec in records:
         if not rec.trace_id:
@@ -297,6 +301,7 @@ def cmd_ragas(args, settings: Settings, c: AppComponents, out: Out) -> None:
     scores_path = run_dir / "ragas_scores.jsonl"
     kept: list[RagasRow] = []
     if scores_path.exists() and not args.rescore:
+
         kept = [
             r
             for r in (
@@ -358,9 +363,14 @@ def cmd_ragas(args, settings: Settings, c: AppComponents, out: Out) -> None:
     out(f"\nSaved to {run_dir}")
 
 
+
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="eval_cli", description=__doc__.split("\n")[0]
+        prog="eval_cli",
+        description="Retrieval metrics, RAGAS and LangSmith-linked evaluation "
+        "runs for the RAG pipeline.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -417,5 +427,5 @@ def main(
     return 0
 
 
-if __name__ == "__main__":  # pragma: no cover
+if __name__ == "__main__":
     sys.exit(main())

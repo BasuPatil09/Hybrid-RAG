@@ -27,6 +27,7 @@ _Q3 = CORPUS[("guide.pdf", 2)]
 
 
 class _JudgeStub:
+
     def __init__(self) -> None:
         self.calls = 0
 
@@ -93,6 +94,27 @@ def env(tmp_path):
     )
     e.runs = lambda: sorted(settings.eval_runs_dir.glob("*"))
     return e
+
+
+class TestDoesNotDependOnDocstrings:
+
+    def test_parser_builds_when_the_module_docstring_is_gone(self, monkeypatch) -> None:
+        import rag.eval.cli as cli
+
+        monkeypatch.setattr(cli, "__doc__", None)
+        assert cli._parser().parse_args(["run"]).command == "run"
+
+    def test_no_package_module_reads___doc__(self) -> None:
+        from pathlib import Path
+
+        import rag
+
+        offenders = [
+            str(p)
+            for p in Path(rag.__file__).parent.rglob("*.py")
+            if "__doc__" in p.read_text(encoding="utf-8")
+        ]
+        assert offenders == []
 
 
 class TestLabelDraft:
@@ -204,6 +226,7 @@ class TestRun:
         assert q1["behavior_match"] == 1.0
         assert q1["retrieval.recall@3"] == 1.0 and q1["retrieval.mrr"] == 1.0
         assert "citation_accuracy" in q1
+
         q2 = by_trace[records["q2"].trace_id]
         assert "citation_accuracy" not in q2 and "retrieval.mrr" not in q2
 
